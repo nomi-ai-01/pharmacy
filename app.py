@@ -20,8 +20,10 @@ LOGO_DATA = "data:image/svg+xml;base64," + base64.b64encode(LOGO_SVG.encode()).d
 st.set_page_config(page_title="Sehat Pharmacy | V2", page_icon=LOGO_DATA, layout="wide")
 
 def secret(k, default=None):
-    try: return st.secrets.get(k, default)
-    except Exception: return os.environ.get(k, default)
+    try: v = st.secrets.get(k)
+    except Exception: v = None
+    if v is None: v = os.environ.get(k)
+    return default if v is None else v
 DB_URL, DB_HOST, APP_PASSWORD = secret("DB_URL"), secret("DB_HOST"), secret("APP_PASSWORD")
 LIVE = bool(DB_URL or DB_HOST)
 TABLES = ["medicines", "sales", "sale_items", "ledger", "purchases"]
