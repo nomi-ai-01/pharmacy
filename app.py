@@ -8,6 +8,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 
 st.set_page_config(page_title="Pharmacy Manager", page_icon="💊", layout="wide")
 
@@ -22,7 +23,8 @@ def secret(key, default=None):
 
 DB_URL = secret("DB_URL") or os.environ.get("DB_URL")
 APP_PASSWORD = secret("APP_PASSWORD") or os.environ.get("APP_PASSWORD")
-LIVE = bool(DB_URL)  # DB_URL ho to asli (permanent) mode, warna local demo mode
+DB_HOST = secret("DB_HOST") or os.environ.get("DB_HOST")
+LIVE = bool(DB_URL or DB_HOST)  # DB_URL ho to asli (permanent) mode, warna local demo mode
 PK = "SERIAL PRIMARY KEY" if LIVE else "INTEGER PRIMARY KEY AUTOINCREMENT"
 TABLES = ["medicines", "sales", "sale_items", "ledger"]
 
@@ -31,12 +33,18 @@ TABLES = ["medicines", "sales", "sale_items", "ledger"]
 @st.cache_resource
 def engine():
     if LIVE:
+        opts = dict(pool_pre_ping=True, pool_size=3, max_overflow=2, pool_recycle=300)
+        if DB_HOST:
+            url = URL.create("postgresql+psycopg2", username=str(secret("DB_USER", "postgres")).strip(),
+                             password=str(secret("DB_PASSWORD", "")).strip(), host=str(DB_HOST).strip(),
+                             port=int(secret("DB_PORT", 5432)), database=str(secret("DB_NAME", "postgres")).strip())
+            return create_engine(url, **opts)
         url = DB_URL.strip()
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
         if url.startswith("postgresql://"):
             url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
-        return create_engine(url, pool_pre_ping=True, pool_size=3, max_overflow=2, pool_recycle=300)
+        return create_engine(url, **opts)
     return create_engine("sqlite:///pharmacy.db", connect_args={"check_same_thread": False})
 
 
@@ -178,7 +186,7 @@ login_gate()
 try:
     setup()
 except Exception as e:
-    st.error("Database se connect nahi ho saka. DB_URL secret check karein.")
+    st.error("Database se connect nahi ho saka. DB secrets (DB_HOST, DB_USER, DB_PASSWORD) check karein.")
     st.caption(str(e)[:300])
     st.stop()
 
