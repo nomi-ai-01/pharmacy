@@ -472,6 +472,14 @@ else:
             set_meta("demo", "0")
             st.success("Done. Ab Stock page se asli dawaiyan add ya CSV import karein.")
             st.rerun()
-    elif not LIVE and st.button("Demo data dobara load karein"):
-        load_demo()
-        st.rerun()
+    else:
+        total_rows = q("SELECT (SELECT COUNT(*) FROM medicines)+(SELECT COUNT(*) FROM sales)"
+                       "+(SELECT COUNT(*) FROM ledger)", one=True)[0]
+        if not LIVE or total_rows == 0:
+            st.divider()
+            st.subheader("Demo data")
+            if LIVE:
+                st.caption("Ye button sirf tab nazar aata hai jab app bilkul khali ho, taake asli data safe rahe.")
+            if st.button("Demo data load karein"):
+                load_demo()
+                st.rerun()
