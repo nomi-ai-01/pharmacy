@@ -52,7 +52,7 @@ def pg_engine():
     return create_engine(url,**opts)
 @st.cache_resource
 def demo_engine():
-    return create_engine("sqlite:////tmp/pharmacy_demo_v2.db" if LIVE else "sqlite:///pharmacy.db",connect_args={"check_same_thread":False})
+    return create_engine("sqlite:////tmp/pharmacy_demo_v3.db" if LIVE else "sqlite:///pharmacy.db",connect_args={"check_same_thread":False})
 def is_live(): return LIVE and not st.session_state.get("demo_view",False)
 def engine(): return pg_engine() if is_live() else demo_engine()
 def q(sql,params=None,one=False):
@@ -88,13 +88,44 @@ def setup():
                     if col not in have:c.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {typ}"))
     if not meta("init"):
         for k,v in {"shop":BRAND,"tagline":TAGLINE,"address":"","phone":"","low_stock":"10","currency":"Rs","init":"1"}.items():setmeta(k,v)
-        if not pg: seed_demo()
+    if not pg: seed_demo()
 def seed_demo():
-    if q("SELECT COUNT(*) FROM medicines",one=True)[0]: return
+    import random
+    if q("SELECT COUNT(*) FROM sales",one=True)[0] or meta("demo")=="0": return
     today=date.today()
-    rows=[("Panadol 500mg","Painkiller",120,8,12,400),("Brufen 400mg","Painkiller",80,10,15,300),("Disprin","Painkiller",6,4,6,25),("Augmentin 625mg","Antibiotic",40,55,75,500),("Amoxil 500mg","Antibiotic",8,30,42,45),("Flagyl 400mg","Antibiotic",60,12,18,350),("Risek 20mg","Stomach",70,15,22,600),("ORS Sachet","Stomach",100,10,15,20)]
-    for n,c,qty,cost,price,days in rows:
-        run("INSERT INTO medicines(name,category,qty,cost,price,expiry,min_qty,batch_no,supplier) VALUES(:n,:c,:q,:co,:p,:e,10,'DEMO-01','Demo Supplier')",{"n":n,"c":c,"q":qty,"co":cost,"p":price,"e":str(today+timedelta(days=days))})
+    meds=[("Panadol 500mg","Painkiller",120,8,12,400),("Brufen 400mg","Painkiller",80,10,15,300),("Disprin","Painkiller",6,4,6,25),
+      ("Augmentin 625mg","Antibiotic",40,55,75,500),("Amoxil 500mg","Antibiotic",8,30,42,45),("Flagyl 400mg","Antibiotic",60,12,18,350),
+      ("Risek 20mg","Stomach",70,15,22,600),("Nexum 40mg","Stomach",45,25,35,280),("ORS Sachet","Stomach",100,10,15,20),
+      ("Gaviscon Syrup","Stomach",12,180,230,150),("Calpol Syrup","Child",25,90,120,90),("Ventolin Inhaler","Chest",15,320,400,700),
+      ("Hydryllin Syrup","Cough",30,100,135,55),("Benadryl Syrup","Cough",5,140,180,180),("Cetrizine 10mg","Allergy",90,5,8,420),
+      ("Avil Injection","Allergy",20,20,30,365),("Glucophage 500mg","Diabetes",55,8,12,300),("Amlodipine 5mg","BP",65,6,10,500),
+      ("Concor 5mg","BP",35,40,55,450),("Vitamin C","Vitamin",150,3,5,800),("Surbex Z","Vitamin",50,18,28,250),
+      ("Dettol 250ml","General",18,250,310,900),("Bandage Roll","General",40,20,30,1000),("Digital Thermometer","Device",9,250,350,1200),
+      ("BP Apparatus","Device",4,2200,2800,1500)]
+    names=["Ahmed","Bilal","Sara Baji","Chacha Rafiq","Zainab","Usman","Walk-in"]
+    with engine().begin() as c:
+        for t in ("medicines","sales","sale_items","ledger","purchases"): c.execute(text(f"DELETE FROM {t}"))
+        for n,cat,qty,cost,price,days in meds:
+            c.execute(text("INSERT INTO medicines(name,category,qty,cost,price,expiry,min_qty,batch_no,supplier) VALUES(:n,:c,:q,:co,:p,:e,10,'DEMO-01','Demo Supplier')"),
+                      {"n":n,"c":cat,"q":qty,"co":cost,"p":price,"e":str(today+timedelta(days=days))})
+        for back in range(7,-1,-1):
+            day=str(today-timedelta(days=back))
+            for _ in range(random.randint(4,9)):
+                items=random.sample(meds,random.randint(1,3)); rows=[]; total=0
+                for n,cat,qty,cost,price,days in items:
+                    k=random.randint(1,3); total+=price*k; rows.append((n,k,price,cost))
+                sid=c.execute(text("INSERT INTO sales(day,customer,total,discount,mode) VALUES(:d,:c,:t,0,'Cash') RETURNING id"),
+                              {"d":day,"c":random.choice(names),"t":total}).scalar()
+                for n,k,price,cost in rows:
+                    c.execute(text("INSERT INTO sale_items(sale_id,med_id,name,qty,price,cost) VALUES(:s,0,:n,:q,:p,:co)"),
+                              {"s":sid,"n":n,"q":k,"p":price,"co":cost})
+        for cust,ph,amt in [("Chacha Rafiq","0300-1111111",1850),("Sara Baji","0301-2222222",920),("Usman","0302-3333333",2400)]:
+            c.execute(text("INSERT INTO ledger(day,customer,phone,amount,note) VALUES(:d,:c,:p,:a,'Udhaar dawai')"),
+                      {"d":str(today-timedelta(days=5)),"c":cust,"p":ph,"a":amt})
+        c.execute(text("INSERT INTO ledger(day,customer,phone,amount,note) VALUES(:d,'Usman','0302-3333333',-1000,'Payment mili')"),
+                  {"d":str(today-timedelta(days=2))})
+        c.execute(text("INSERT INTO purchases(day,medicine_name,supplier,qty,cost,total,batch_no,expiry) VALUES(:d,'Panadol 500mg','Demo Supplier',100,8,800,'DEMO-01',:e)"),
+                  {"d":str(today-timedelta(days=6)),"e":str(today+timedelta(days=400))})
     setmeta("demo","1")
 def money(v): return f"{meta('currency','Rs')} {float(v or 0):,.2f}"
 def logo_html():
